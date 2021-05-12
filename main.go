@@ -24,6 +24,8 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
+
+	"github.com/lucasb-eyer/go-colorful"
 )
 
 func main() {
@@ -33,6 +35,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	// just for test...
+	// generateHSVSpectrumImage(400, 200, "./colorspace.png")
+	// generateHSVSpectrumImageWithFandeck(400, 200, fandeckColors, "./colorspace-fandeck.png")
+	// return
 
 	startedOn := time.Now()
 
@@ -87,42 +94,7 @@ func main() {
 		panic(err)
 	}
 
-	img := image.NewRGBA(image.Rect(0, 0, 300, 44*len(allResult)))
-	for idx, result := range allResult {
-		x := 0
-		y := idx * 44
-
-		// draw sampling color
-		r_, g_, b_, _ := result.SamplingRGB.RGBA()
-		r := int(float64(r_) / math.MaxUint16 * 255)
-		g := int(float64(g_) / math.MaxUint16 * 255)
-		b := int(float64(b_) / math.MaxUint16 * 255)
-
-		draw.Draw(img, image.Rect(x, y, x+100, y+44),
-			&image.Uniform{result.SamplingRGB},
-			image.Point{}, draw.Src)
-		addLabel(img, x+4, y+24, fmt.Sprintf("#%02x%02x%02x", r, g, b))
-
-		// draw euclidean match result
-		x += 100
-		draw.Draw(img, image.Rect(x, y, x+100, y+44),
-			&image.Uniform{result.RGBEuclideanResult.Color()},
-			image.Point{}, draw.Src)
-		addLabel(img, x+4, y+24, result.RGBEuclideanResult.Code)
-
-		// draw euclidean match result
-		x += 100
-		draw.Draw(img, image.Rect(x, y, x+100, y+44),
-			&image.Uniform{result.DeltaEResult.Color()},
-			image.Point{}, draw.Src)
-		addLabel(img, x+4, y+24, result.DeltaEResult.Code)
-	}
-	f, err := os.Create("benchmark.png")
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	if err := png.Encode(f, img); err != nil {
+	if err := makeBenchmarkResultCSVFile(allResult, "benchmark.png"); err != nil {
 		panic(err)
 	}
 }
@@ -529,6 +501,49 @@ func makeBenchmarkResultCSVFile(results []BenchmarkResult, outFilePath string) e
 	return nil
 }
 
+func makeBenchmarkResultPNGFile(results []BenchmarkResult, outFilePath string) error {
+	img := image.NewRGBA(image.Rect(0, 0, 300, 44*len(results)))
+	for idx, result := range results {
+		x := 0
+		y := idx * 44
+
+		// draw sampling color
+		r_, g_, b_, _ := result.SamplingRGB.RGBA()
+		r := int(float64(r_) / math.MaxUint16 * 255)
+		g := int(float64(g_) / math.MaxUint16 * 255)
+		b := int(float64(b_) / math.MaxUint16 * 255)
+
+		draw.Draw(img, image.Rect(x, y, x+100, y+44),
+			&image.Uniform{result.SamplingRGB},
+			image.Point{}, draw.Src)
+		addLabel(img, x+4, y+24, fmt.Sprintf("#%02x%02x%02x", r, g, b))
+
+		// draw euclidean match result
+		x += 100
+		draw.Draw(img, image.Rect(x, y, x+100, y+44),
+			&image.Uniform{result.RGBEuclideanResult.Color()},
+			image.Point{}, draw.Src)
+		addLabel(img, x+4, y+24, result.RGBEuclideanResult.Code)
+
+		// draw euclidean match result
+		x += 100
+		draw.Draw(img, image.Rect(x, y, x+100, y+44),
+			&image.Uniform{result.DeltaEResult.Color()},
+			image.Point{}, draw.Src)
+		addLabel(img, x+4, y+24, result.DeltaEResult.Code)
+	}
+	f, err := os.Create(outFilePath)
+	if err != nil {
+		return errors.Wrap(err, "failed to create file")
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		return errors.Wrap(err, "failed to encode PNG")
+	}
+
+	return nil
+}
+
 func addLabel(img *image.RGBA, x, y int, label string) {
 	col := color.RGBA{0, 0, 0, 255}
 	point := fixed.Point26_6{fixed.Int26_6(x * 64), fixed.Int26_6(y * 64)}
@@ -539,4 +554,90 @@ func addLabel(img *image.RGBA, x, y int, label string) {
 		Dot:  point,
 	}
 	d.DrawString(label)
+}
+
+func generateHSVSpectrumImage(width, height int, outFilePath string) error {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for x := 0; x < width; x++ {
+		ux := float64(x) / float64(width)
+		h := 360.0 * ux
+		for y := 0; y < height; y++ {
+			uy := float64(y) / float64(height)
+			s := 1.0
+			v := 1.0
+			if uy < 0.5 { // upper half
+				s = uy * 2.0 // make sat from 0 - 1 along with increasing y
+				v = 1.0      // keep value to 1
+			} else {
+				s = 1.0                      // keep sat to 1
+				v = 1.0 - ((uy - 0.5) * 2.0) // make value from 1 - 0 along with increasing y
+			}
+			c := colorful.Hsv(h, s, v)
+			r, g, b := c.RGB255()
+			img.SetRGBA(x, y, color.RGBA{r, g, b, 255})
+		}
+	}
+
+	f, err := os.Create(outFilePath)
+	if err != nil {
+		return errors.Wrap(err, "failed to create file")
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		return errors.Wrap(err, "failed to encode PNG")
+	}
+
+	return nil
+}
+
+func generateHSVSpectrumImageWithFandeck(width, height int, fandeckColors []FandeckColor, outFilePath string) error {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for x := 0; x < width; x++ {
+		ux := float64(x) / float64(width)
+		h := 360.0 * ux
+		log.Println("rasterize...", ux*100, "%")
+		for y := 0; y < height; y++ {
+			uy := float64(y) / float64(height)
+			s := 1.0
+			v := 1.0
+			if uy < 0.5 { // upper half
+				s = uy * 2.0 // make sat from 0 - 1 along with increasing y
+				v = 1.0      // keep value to 1
+			} else {
+				s = 1.0                      // keep sat to 1
+				v = 1.0 - ((uy - 0.5) * 2.0) // make value from 1 - 0 along with increasing y
+			}
+			c := colorful.Hsv(h, s, v)
+			r, g, b := c.RGB255()
+			fdColor := findFandeckColor(color.RGBA{r, g, b, 255}, fandeckColors)
+			img.Set(x, y, fdColor.Color())
+		}
+	}
+
+	f, err := os.Create(outFilePath)
+	if err != nil {
+		return errors.Wrap(err, "failed to create file")
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		return errors.Wrap(err, "failed to encode PNG")
+	}
+
+	return nil
+}
+
+func findFandeckColor(rgb color.Color, fandeckColors []FandeckColor) FandeckColor {
+	diffDeltaE := math.MaxFloat64
+	matchFDColorWithDeltaEDiff := fandeckColors[0]
+
+	for _, fdColor := range fandeckColors {
+
+		dDeltaE := fdColor.DiffWithCIEDeltaE2000(rgb)
+		if dDeltaE < diffDeltaE {
+			diffDeltaE = dDeltaE
+			matchFDColorWithDeltaEDiff = fdColor
+		}
+	}
+
+	return matchFDColorWithDeltaEDiff
 }
