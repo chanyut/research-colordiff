@@ -1,3 +1,8 @@
+/*
+reference CIEDE2000 from https://github.com/mattn/go-ciede2000
+algorithm and equation reference http://www2.ece.rochester.edu/~gsharma/ciede2000/ciede2000noteCRNA.pdf
+*/
+
 package main
 
 import (
