@@ -29,7 +29,7 @@ import (
 func main() {
 	rand.Seed(time.Now().Unix())
 
-	toaColors, err := loadCSV()
+	fandeckColors, err := loadCSV()
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +48,7 @@ func main() {
 
 	// spin up workers...
 	for w := 1; w <= numberOfWorkers; w++ {
-		go benchmarkWorker(w, toaColors, jobsChan, resultChan)
+		go benchmarkWorker(w, fandeckColors, jobsChan, resultChan)
 	}
 
 	// push benchmarking jobs...
@@ -127,11 +127,11 @@ func main() {
 	}
 }
 
-func benchmarkWorker(id int, toaColors []TOAColor, samplingChan <-chan []color.Color, resultChan chan<- []BenchmarkResult) {
+func benchmarkWorker(id int, fandeckColors []FandeckColor, samplingChan <-chan []color.Color, resultChan chan<- []BenchmarkResult) {
 	for samplings := range samplingChan {
 		resultBuffer := []BenchmarkResult{}
 		for _, samplingRGB := range samplings {
-			result := benchmarkEach(samplingRGB, toaColors, false)
+			result := benchmarkEach(samplingRGB, fandeckColors, false)
 			if result.CompareDiffInRGBDistance > 0 {
 				resultBuffer = append(resultBuffer, result)
 			}
@@ -140,23 +140,23 @@ func benchmarkWorker(id int, toaColors []TOAColor, samplingChan <-chan []color.C
 	}
 }
 
-func benchmarkEach(samplingRGB color.Color, toaColors []TOAColor, verbose bool) BenchmarkResult {
+func benchmarkEach(samplingRGB color.Color, fandeckColors []FandeckColor, verbose bool) BenchmarkResult {
 	diffRGB := math.MaxFloat64
-	matchTOAColorWithRGBDiff := toaColors[0]
+	matchFDColorWithRGBDiff := fandeckColors[0]
 	diffDeltaE := math.MaxFloat64
-	matchTOAColorWithDeltaEDiff := toaColors[0]
+	matchFDColorWithDeltaEDiff := fandeckColors[0]
 
-	for _, toaColor := range toaColors {
-		dRGB := toaColor.DiffWithRGB(samplingRGB)
+	for _, fdColor := range fandeckColors {
+		dRGB := fdColor.DiffWithRGB(samplingRGB)
 		if dRGB < diffRGB {
 			diffRGB = dRGB
-			matchTOAColorWithRGBDiff = toaColor
+			matchFDColorWithRGBDiff = fdColor
 		}
 
-		dDeltaE := toaColor.DiffWithCIEDeltaE2000(samplingRGB)
+		dDeltaE := fdColor.DiffWithCIEDeltaE2000(samplingRGB)
 		if dDeltaE < diffDeltaE {
 			diffDeltaE = dDeltaE
-			matchTOAColorWithDeltaEDiff = toaColor
+			matchFDColorWithDeltaEDiff = fdColor
 		}
 	}
 
@@ -166,16 +166,16 @@ func benchmarkEach(samplingRGB color.Color, toaColors []TOAColor, verbose bool) 
 		g := int(float64(g_) / math.MaxUint16 * 255)
 		b := int(float64(b_) / math.MaxUint16 * 255)
 		log.Printf("sampling RGB (%v, %v, %v)", r, g, b)
-		log.Println("match with RGB Euclidean =>", matchTOAColorWithRGBDiff.Debug())
-		log.Println("match with DeltaE2000 =>", matchTOAColorWithDeltaEDiff.Debug())
+		log.Println("match with RGB Euclidean =>", matchFDColorWithRGBDiff.Debug())
+		log.Println("match with DeltaE2000 =>", matchFDColorWithDeltaEDiff.Debug())
 	}
 
-	distance := matchTOAColorWithRGBDiff.DiffWithRGB(matchTOAColorWithDeltaEDiff.Color())
+	distance := matchFDColorWithRGBDiff.DiffWithRGB(matchFDColorWithDeltaEDiff.Color())
 
 	result := BenchmarkResult{
 		SamplingRGB:              samplingRGB,
-		RGBEuclideanResult:       matchTOAColorWithRGBDiff,
-		DeltaEResult:             matchTOAColorWithDeltaEDiff,
+		RGBEuclideanResult:       matchFDColorWithRGBDiff,
+		DeltaEResult:             matchFDColorWithDeltaEDiff,
 		CompareDiffInRGBDistance: distance,
 	}
 
@@ -188,8 +188,8 @@ func benchmarkEach(samplingRGB color.Color, toaColors []TOAColor, verbose bool) 
 
 type BenchmarkResult struct {
 	SamplingRGB              color.Color
-	RGBEuclideanResult       TOAColor
-	DeltaEResult             TOAColor
+	RGBEuclideanResult       FandeckColor
+	DeltaEResult             FandeckColor
 	CompareDiffInRGBDistance float64
 }
 
@@ -222,23 +222,23 @@ func (bench BenchmarkResult) Debug() {
 	log.Println("match with DeltaE2000 =>", bench.DeltaEResult.Debug())
 }
 
-type TOAColor struct {
+type FandeckColor struct {
 	Code string
 	R    uint8
 	G    uint8
 	B    uint8
 }
 
-func (c TOAColor) Color() color.Color {
+func (c FandeckColor) Color() color.Color {
 	return color.RGBA{c.R, c.G, c.B, 255}
 }
 
-func (c TOAColor) Debug() string {
+func (c FandeckColor) Debug() string {
 	return fmt.Sprintf("%s (%v, %v, %v)", c.Code, c.R, c.G, c.B)
 }
 
 // DiffWithRGB returns Euclidean distance implementation of RGB color
-func (c TOAColor) DiffWithRGB(other color.Color) float64 {
+func (c FandeckColor) DiffWithRGB(other color.Color) float64 {
 	r_, g_, b_, _ := other.RGBA()
 	r := int(float64(r_) / math.MaxUint16 * 255)
 	g := int(float64(g_) / math.MaxUint16 * 255)
@@ -250,7 +250,7 @@ func (c TOAColor) DiffWithRGB(other color.Color) float64 {
 }
 
 // DiffWithRGB returns Euclidean distance implementation of RGB color
-func (c TOAColor) DiffWithCIEDeltaE2000(other color.Color) float64 {
+func (c FandeckColor) DiffWithCIEDeltaE2000(other color.Color) float64 {
 	return CIEDE2000(ToLAB(c.Color()), ToLAB(other))
 }
 
@@ -466,13 +466,13 @@ func Diff(c1, c2 color.Color) float64 {
 	return CIEDE2000(ToLAB(c1), ToLAB(c2))
 }
 
-func loadCSV() ([]TOAColor, error) {
-	csv, err := ioutil.ReadFile("./toa-colors.csv")
+func loadCSV() ([]FandeckColor, error) {
+	csv, err := ioutil.ReadFile("./fandeck-colors.csv")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read csv file")
 	}
 
-	toaColors := []TOAColor{}
+	fdColors := []FandeckColor{}
 	lines := strings.Split(string(csv), "\n")
 	for _, line := range lines {
 		cols := strings.Split(line, ",")
@@ -480,16 +480,16 @@ func loadCSV() ([]TOAColor, error) {
 		g, _ := strconv.Atoi(cols[3])
 		b, _ := strconv.Atoi(cols[4])
 
-		toaColor := TOAColor{
+		fdColor := FandeckColor{
 			Code: cols[0],
 			R:    uint8(r),
 			G:    uint8(g),
 			B:    uint8(b),
 		}
-		toaColors = append(toaColors, toaColor)
+		fdColors = append(fdColors, fdColor)
 	}
 
-	return toaColors, nil
+	return fdColors, nil
 }
 
 func randomUniqueUint8(n int) []uint8 {
